@@ -59,3 +59,5 @@ require (
 	gopkg.in/DataDog/dd-trace-go.v1 v1.12.1 // indirect
 	gopkg.in/yaml.v2 v2.2.2
 )
+
+replace github.com/honeycombio/opencensus-exporter => ./third_party/github.com/honeycombio/opencensus-exporter

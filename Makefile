@@ -2,6 +2,7 @@
 ALL_SRC := $(shell find . -name '*.go' \
                                 -not -path './vendor/*' \
                                 -not -path './tools/*' \
+                                -not -path './third_party/*' \
                                 -type f | sort)
 
 # ALL_PKGS is used with 'go cover'
