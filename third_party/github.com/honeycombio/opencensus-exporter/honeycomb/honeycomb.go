@@ -34,19 +34,20 @@ type Exporter struct {
 
 // Annotation represents an annotation with a value and a timestamp.
 type Annotation struct {
+	Name      string    `json:"name"`
+	TraceID   string    `json:"trace.trace_id"`
+	ParentID  string    `json:"trace.parent_id"`
 	Timestamp time.Time `json:"timestamp"`
-	Value     string    `json:"value"`
 }
 
 // Span is the format of trace events that Honeycomb accepts
 type Span struct {
-	TraceID     string       `json:"trace.trace_id"`
-	Name        string       `json:"name"`
-	ID          string       `json:"trace.span_id"`
-	ParentID    string       `json:"trace.parent_id,omitempty"`
-	DurationMs  float64      `json:"duration_ms"`
-	Timestamp   time.Time    `json:"timestamp,omitempty"`
-	Annotations []Annotation `json:"annotations,omitempty"`
+	TraceID    string    `json:"trace.trace_id"`
+	Name       string    `json:"name"`
+	ID         string    `json:"trace.span_id"`
+	ParentID   string    `json:"trace.parent_id,omitempty"`
+	DurationMs float64   `json:"duration_ms"`
+	Timestamp  time.Time `json:"timestamp,omitempty"`
 }
 
 // Close waits for all in-flight messages to be sent. You should
@@ -109,6 +110,11 @@ func (e *Exporter) ExportSpan(sd *trace.SpanData) {
 		ev.AddField("status_description", sd.Status.Message)
 	}
 	ev.SendPresampled()
+
+	// Send annotations
+	for _, a := range sd.Annotations {
+		e.exportAnnotation(sd, &a)
+	}
 }
 
 func honeycombSpan(s *trace.SpanData) Span {
@@ -128,28 +134,37 @@ func honeycombSpan(s *trace.SpanData) Span {
 		hcSpan.DurationMs = float64(e.Sub(s)) / float64(time.Millisecond)
 	}
 
-	if len(s.Annotations) != 0 || len(s.MessageEvents) != 0 {
-		hcSpan.Annotations = make([]Annotation, 0, len(s.Annotations)+len(s.MessageEvents))
-		for _, a := range s.Annotations {
-			hcSpan.Annotations = append(hcSpan.Annotations, Annotation{
-				Timestamp: a.Time,
-				Value:     a.Message,
-			})
-		}
-		for _, m := range s.MessageEvents {
-			a := Annotation{
-				Timestamp: m.Time,
-			}
-			switch m.EventType {
-			case trace.MessageEventTypeSent:
-				a.Value = "SENT"
-			case trace.MessageEventTypeRecv:
-				a.Value = "RECV"
-			default:
-				a.Value = "<?>"
-			}
-			hcSpan.Annotations = append(hcSpan.Annotations, a)
+	// TODO: Re-implement MessageEvent handling as needed
+
+	return hcSpan
+}
+
+func (e *Exporter) exportAnnotation(sd *trace.SpanData, a *trace.Annotation) {
+	ev := e.Builder.NewEvent()
+	if e.SampleFraction != 0 {
+		ev.SampleRate = uint(1 / e.SampleFraction)
+	}
+	if e.ServiceName != "" {
+		ev.AddField("service_name", e.ServiceName)
+	}
+	ev.Timestamp = a.Time
+
+	ev.Add(Annotation{
+		Name:      a.Message,
+		TraceID:   sd.TraceID.String(),
+		ParentID:  sd.SpanID.String(),
+		Timestamp: a.Time,
+	})
+
+	// Mark the event as a trace annotation
+	ev.AddField("trace.annotation", true)
+
+	// Add an event field for each attribute
+	if len(a.Attributes) != 0 {
+		for key, value := range a.Attributes {
+			ev.AddField(key, value)
 		}
 	}
-	return hcSpan
+
+	ev.SendPresampled()
 }
